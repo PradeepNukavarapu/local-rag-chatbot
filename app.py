@@ -10,6 +10,10 @@ from modules.document_processor import (
     extract_text_from_document,
     hybrid_chunking
 )
+from modules.web_scraper import (
+    validate_url,
+    scrape_url_to_pages
+)
 from modules.embeddings_local import (
     generate_embeddings_for_chunk,
     generate_embeddings_for_query
@@ -32,12 +36,18 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
     <style>
+    /* Main Header */
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
-        color: #1f77b4;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 1rem;
     }
+    
+    /* Sub Header */
     .sub-header {
         font-size: 1.5rem;
         font-weight: bold;
@@ -45,6 +55,156 @@ st.markdown("""
         margin-top: 1.5rem;
         margin-bottom: 1rem;
     }
+    
+    /* Chat Message Styling */
+    .stChatMessage {
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+    }
+    
+    /* User Message */
+    [data-testid="stChatMessage"] [data-testid="stChatMessageUser"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 18px 18px 4px 18px;
+        margin-left: auto;
+        max-width: 85%;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* Assistant Message */
+    [data-testid="stChatMessage"] [data-testid="stChatMessageAssistant"] {
+        background: #f0f2f6;
+        color: #1f2937;
+        padding: 1rem 1.5rem;
+        border-radius: 18px 18px 18px 4px;
+        margin-right: auto;
+        max-width: 85%;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #667eea;
+    }
+    
+    /* Chat Input */
+    .stChatInputContainer {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        padding: 1rem 0;
+        border-top: 1px solid #e5e7eb;
+        z-index: 100;
+    }
+    
+    /* Sidebar Styling */
+    .css-1d391kg {
+        background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
+    }
+    
+    /* Info/Warning Boxes */
+    .stInfo {
+        background: #e0f2fe;
+        border-left: 4px solid #0ea5e9;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    .stWarning {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    .stSuccess {
+        background: #d1fae5;
+        border-left: 4px solid #10b981;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    /* Button Styling */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Code Blocks */
+    pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        overflow-x: auto;
+    }
+    
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #667eea;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #764ba2;
+    }
+    
+    /* Document List Styling */
+    .document-item {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .document-item:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    /* Spinner Styling */
+    .stSpinner > div {
+        border-color: #667eea transparent #667eea transparent;
+    }
+    
+    /* Expander Styling */
+    .streamlit-expanderHeader {
+        background: #f8f9fa;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+    
+    /* Main Container */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -58,8 +218,22 @@ def main():
         st.info("To start Ollama, open a new terminal and run: `ollama serve`")
         st.stop()
     
-    # Sidebar for navigation
-    page = st.sidebar.selectbox("Choose a page", ["📄 Upload Documents", "💬 Chat Interface"])
+    # Sidebar for navigation with better styling
+    st.sidebar.markdown("### 🧭 Navigation")
+    page = st.sidebar.radio(
+        "Choose a page",
+        ["📄 Upload Documents", "💬 Chat Interface"],
+        label_visibility="collapsed"
+    )
+    
+    # Sidebar info
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ℹ️ About")
+    st.sidebar.info(
+        "**Local RAG Chatbot**\n\n"
+        "Upload documents/URLs and ask questions using local AI models. "
+        "All processing happens on your machine - your data stays private."
+    )
     
     if page == "📄 Upload Documents":
         upload_page()
@@ -68,86 +242,179 @@ def main():
 
 def upload_page():
     """Document upload and processing page"""
-    st.markdown('<h2 class="sub-header">Upload Documents</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="sub-header">📄 Add Content to Knowledge Base</h2>', unsafe_allow_html=True)
     
-    st.info("Upload PDF or DOCX files to add them to the knowledge base. The documents will be processed and made searchable.")
+    # Create tabs for different input methods
+    tab1, tab2 = st.tabs(["📁 Upload Files", "🌐 Add from URL"])
     
-    uploaded_files = st.file_uploader(
-        "Choose PDF or DOCX files",
-        type=['pdf', 'docx'],
-        accept_multiple_files=True
-    )
+    with tab1:
+        st.info("📤 **Upload PDF or DOCX files** to add them to the knowledge base. The documents will be processed, chunked, and made searchable.")
+        
+        # File uploader with better styling
+        uploaded_files = st.file_uploader(
+            "Choose PDF or DOCX files",
+            type=['pdf', 'docx'],
+            accept_multiple_files=True,
+            help="You can upload multiple files at once. Supported formats: PDF and DOCX."
+        )
+        
+        if uploaded_files:
+            st.success(f"✅ **{len(uploaded_files)} file(s)** selected and ready to process.")
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("🚀 Process Documents", type="primary", use_container_width=True, key="process_files"):
+                    process_documents(uploaded_files)
+            with col2:
+                st.caption("Click to start processing. This may take a few moments depending on file size.")
     
-    if uploaded_files:
-        if st.button("Process Documents", type="primary"):
-            process_documents(uploaded_files)
+    with tab2:
+        st.info("🌐 **Enter URL(s)** to scrape content from webpage(s) and add them to your knowledge base. You can enter multiple URLs (one per line).")
+        
+        # URL input - text area for multiple URLs
+        url_input = st.text_area(
+            "Enter URL(s) - one per line",
+            placeholder="https://example.com/article1\nhttps://example.com/article2\nhttps://example.com/article3",
+            help="Enter one or more URLs, each on a new line. URLs should start with http:// or https://",
+            height=150
+        )
+        
+        if url_input:
+            # Parse URLs (split by newline and filter empty lines)
+            urls = [url.strip() for url in url_input.split('\n') if url.strip()]
+            
+            if urls:
+                st.info(f"📋 **{len(urls)} URL(s)** entered")
+                
+                # Validate all URLs
+                valid_urls = []
+                invalid_urls = []
+                
+                with st.expander(f"🔍 Validate {len(urls)} URL(s)", expanded=False):
+                    for idx, url in enumerate(urls, 1):
+                        is_valid, message = validate_url(url)
+                        if is_valid:
+                            st.success(f"✅ URL {idx}: {url}")
+                            valid_urls.append(url)
+                        else:
+                            st.warning(f"⚠️ URL {idx}: {url} - {message}")
+                            invalid_urls.append((url, message))
+                
+                # Show summary
+                if invalid_urls:
+                    st.warning(f"⚠️ **{len(invalid_urls)} URL(s)** failed validation. Only valid URLs will be processed.")
+                
+                if valid_urls:
+                    st.success(f"✅ **{len(valid_urls)} URL(s)** are valid and ready to process.")
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        if st.button("🚀 Scrape & Process URLs", type="primary", use_container_width=True, key="process_urls"):
+                            process_urls(valid_urls)
+                    with col2:
+                        st.caption(f"Click to scrape and process {len(valid_urls)} URL(s).")
+                elif urls:
+                    st.error("❌ No valid URLs to process. Please fix the URLs above.")
+            else:
+                st.warning("⚠️ Please enter at least one URL.")
     
-    # Show uploaded documents
+    # Show uploaded documents with better styling
     st.markdown("---")
-    st.markdown('<h3 class="sub-header">Uploaded Documents</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="sub-header">📚 Your Documents</h3>', unsafe_allow_html=True)
     
     documents = get_all_documents()
     if documents:
+        st.caption(f"Total: {len(documents)} document(s) in your knowledge base")
         for doc_name in documents:
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"📄 {doc_name}")
-            with col2:
-                if st.button("Delete", key=f"delete_{doc_name}"):
-                    if delete_document(doc_name):
-                        st.success(f"Deleted {doc_name}")
-                        st.rerun()
+            with st.container():
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"""
+                    <div class="document-item">
+                        <strong>📄 {doc_name}</strong>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    if st.button("🗑️ Delete", key=f"delete_{doc_name}", use_container_width=True):
+                        if delete_document(doc_name):
+                            st.success(f"✅ Deleted **{doc_name}**")
+                            st.rerun()
     else:
-        st.info("No documents uploaded yet.")
+        st.info("📭 **No documents uploaded yet.** Upload your first document above to get started!")
 
 def process_documents(uploaded_files):
-    """Process uploaded documents"""
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    """Process uploaded documents with improved error handling and feedback"""
+    if not uploaded_files:
+        st.warning("⚠️ No files selected. Please select files to process.")
+        return
+    
+    # Create a container for processing status
+    status_container = st.container()
+    
+    with status_container:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        file_status = {}  # Track status of each file
+    
+    successful_files = 0
+    failed_files = 0
     
     for idx, uploaded_file in enumerate(uploaded_files):
-        status_text.text(f"Processing {uploaded_file.name}...")
+        file_key = f"{uploaded_file.name}_{idx}"
+        status_text.text(f"📄 Processing {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}...")
         progress_bar.progress((idx) / len(uploaded_files))
         
         try:
             # Step 1: Validate
-            status_text.text(f"Validating {uploaded_file.name}...")
+            status_text.text(f"🔍 Validating {uploaded_file.name}...")
             is_valid, message = validate_document_requirements(uploaded_file)
             if not is_valid:
-                st.error(f"❌ {uploaded_file.name}: {message}")
+                st.error(f"❌ **{uploaded_file.name}**: {message}")
+                file_status[file_key] = {"status": "failed", "message": message}
+                failed_files += 1
                 continue
-            
-            st.success(f"✅ {uploaded_file.name}: {message}")
             
             # Step 2: Extract text
-            status_text.text(f"Extracting text from {uploaded_file.name}...")
+            status_text.text(f"📖 Extracting text from {uploaded_file.name}...")
             pages_data = extract_text_from_document(uploaded_file)
             if not pages_data:
-                st.error(f"❌ Failed to extract text from {uploaded_file.name}")
+                st.error(f"❌ **{uploaded_file.name}**: Failed to extract text")
+                file_status[file_key] = {"status": "failed", "message": "Text extraction failed"}
+                failed_files += 1
                 continue
             
+            st.info(f"📄 Extracted {len(pages_data)} page(s) from {uploaded_file.name}")
+            
             # Step 3: Create chunks
-            status_text.text(f"Creating chunks for {uploaded_file.name}...")
+            status_text.text(f"✂️ Creating chunks for {uploaded_file.name}...")
             all_chunks = []
-            global_chunk_index = 0  # Keep track across all pages
+            global_chunk_index = 0
             for page_data in pages_data:
                 chunks = hybrid_chunking(page_data['text'])
                 for chunk_text in chunks:
                     all_chunks.append({
                         'chunk_text': chunk_text,
-                        'chunk_index': global_chunk_index,  # Unique across all pages
+                        'chunk_index': global_chunk_index,
                         'page_number': page_data['page_number']
                     })
-                    global_chunk_index += 1  # Increment for next chunk
+                    global_chunk_index += 1
+            
+            if not all_chunks:
+                st.warning(f"⚠️ **{uploaded_file.name}**: No chunks created. File may be too short.")
+                file_status[file_key] = {"status": "failed", "message": "No chunks created"}
+                failed_files += 1
+                continue
+            
+            st.info(f"📝 Created {len(all_chunks)} chunk(s) from {uploaded_file.name}")
             
             # Step 4: Generate embeddings
-            status_text.text(f"Generating embeddings for {uploaded_file.name}...")
+            status_text.text(f"🧮 Generating embeddings for {uploaded_file.name}...")
             chunks_with_embeddings = []
             total_chunks = len(all_chunks)
             
-            # Show progress for embeddings
+            # Show progress for embeddings with better feedback
             embedding_progress = st.progress(0)
+            embedding_status = st.empty()
             for i, chunk in enumerate(all_chunks):
+                embedding_status.text(f"Generating embedding {i + 1}/{total_chunks}...")
                 embedding = generate_embeddings_for_chunk(chunk['chunk_text'])
                 if embedding:
                     chunks_with_embeddings.append({
@@ -157,50 +424,226 @@ def process_documents(uploaded_files):
                 embedding_progress.progress((i + 1) / total_chunks)
             
             embedding_progress.empty()
+            embedding_status.empty()
+            
+            if not chunks_with_embeddings:
+                st.error(f"❌ **{uploaded_file.name}**: Failed to generate embeddings")
+                file_status[file_key] = {"status": "failed", "message": "Embedding generation failed"}
+                failed_files += 1
+                continue
             
             # Step 5: Store in database
-            status_text.text(f"Storing {uploaded_file.name} in database...")
+            status_text.text(f"💾 Storing {uploaded_file.name} in database...")
             doc_name = uploaded_file.name.rsplit('.', 1)[0]  # Remove extension
+            
             if store_document_chunks(doc_name, chunks_with_embeddings):
-                st.success(f"✅ Successfully processed {uploaded_file.name} ({len(chunks_with_embeddings)} chunks)")
+                st.success(f"✅ **{uploaded_file.name}**: Successfully processed ({len(chunks_with_embeddings)} chunks)")
+                file_status[file_key] = {"status": "success", "chunks": len(chunks_with_embeddings)}
+                successful_files += 1
             else:
-                st.error(f"❌ Failed to store {uploaded_file.name}")
+                st.error(f"❌ **{uploaded_file.name}**: Failed to store in database")
+                file_status[file_key] = {"status": "failed", "message": "Database storage failed"}
+                failed_files += 1
             
             progress_bar.progress((idx + 1) / len(uploaded_files))
             
         except Exception as e:
-            st.error(f"❌ Error processing {uploaded_file.name}: {e}")
-            import traceback
-            st.error(f"Details: {traceback.format_exc()}")
+            st.error(f"❌ **{uploaded_file.name}**: Error - {str(e)}")
+            with st.expander(f"Error Details for {uploaded_file.name}"):
+                import traceback
+                st.code(traceback.format_exc())
+            file_status[file_key] = {"status": "failed", "message": str(e)}
+            failed_files += 1
     
-    status_text.text("Processing complete!")
-    progress_bar.empty()
-    if len(uploaded_files) > 0:
+    # Final summary
+    status_text.text("✅ Processing complete!")
+    progress_bar.progress(1.0)
+    
+    # Show summary
+    st.markdown("---")
+    if successful_files > 0:
+        st.success(f"🎉 **{successful_files} file(s)** processed successfully!")
+    if failed_files > 0:
+        st.warning(f"⚠️ **{failed_files} file(s)** failed to process")
+    
+    if successful_files > 0:
         st.balloons()
+    
+    # Keep progress indicators visible for user to see final status
+    # They will be cleared when user interacts with the app
+
+def process_urls(urls):
+    """Process multiple URLs by scraping and adding to knowledge base"""
+    if not urls:
+        st.warning("⚠️ No URLs provided. Please enter URLs to process.")
+        return
+    
+    # Create a container for processing status
+    status_container = st.container()
+    
+    with status_container:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        url_status = {}  # Track status of each URL
+    
+    successful_urls = 0
+    failed_urls = 0
+    
+    for idx, url in enumerate(urls):
+        url_key = f"{url}_{idx}"
+        status_text.text(f"🌐 Processing {idx + 1}/{len(urls)}: {url[:60]}...")
+        progress_bar.progress((idx) / len(urls))
+        
+        try:
+            # Step 1: Scrape content (validation already done)
+            status_text.text(f"📥 Scraping content from {url[:60]}...")
+            pages_data = scrape_url_to_pages(url)
+            if not pages_data:
+                st.error(f"❌ **{url[:60]}...**: Failed to scrape content")
+                url_status[url_key] = {"status": "failed", "message": "Scraping failed"}
+                failed_urls += 1
+                continue
+            
+            st.info(f"📄 Scraped {len(pages_data)} section(s) from {url[:60]}...")
+            
+            # Step 2: Create chunks
+            status_text.text(f"✂️ Creating chunks from {url[:60]}...")
+            all_chunks = []
+            global_chunk_index = 0
+            for page_data in pages_data:
+                chunks = hybrid_chunking(page_data['text'])
+                for chunk_text in chunks:
+                    all_chunks.append({
+                        'chunk_text': chunk_text,
+                        'chunk_index': global_chunk_index,
+                        'page_number': page_data['page_number']
+                    })
+                    global_chunk_index += 1
+            
+            if not all_chunks:
+                st.warning(f"⚠️ **{url[:60]}...**: No chunks created. Page may be too short.")
+                url_status[url_key] = {"status": "failed", "message": "No chunks created"}
+                failed_urls += 1
+                continue
+            
+            st.info(f"📝 Created {len(all_chunks)} chunk(s) from {url[:60]}...")
+            
+            # Step 3: Generate embeddings
+            status_text.text(f"🧮 Generating embeddings for {url[:60]}...")
+            chunks_with_embeddings = []
+            total_chunks = len(all_chunks)
+            
+            # Show progress for embeddings
+            embedding_progress = st.progress(0)
+            embedding_status = st.empty()
+            for i, chunk in enumerate(all_chunks):
+                embedding_status.text(f"Generating embedding {i + 1}/{total_chunks}...")
+                embedding = generate_embeddings_for_chunk(chunk['chunk_text'])
+                if embedding:
+                    chunks_with_embeddings.append({
+                        **chunk,
+                        'embeddings': embedding
+                    })
+                embedding_progress.progress((i + 1) / total_chunks)
+            
+            embedding_progress.empty()
+            embedding_status.empty()
+            
+            if not chunks_with_embeddings:
+                st.error(f"❌ **{url[:60]}...**: Failed to generate embeddings")
+                url_status[url_key] = {"status": "failed", "message": "Embedding generation failed"}
+                failed_urls += 1
+                continue
+            
+            # Step 4: Store in database
+            status_text.text(f"💾 Storing {url[:60]}... in database...")
+            
+            # Create a clean document name from URL
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            doc_name = f"{parsed_url.netloc.replace('www.', '')}_{parsed_url.path.replace('/', '_').replace('.', '_')[:50]}"
+            if not doc_name or doc_name == '_':
+                doc_name = f"webpage_{url[:50].replace('://', '_').replace('/', '_')}"
+            
+            if store_document_chunks(doc_name, chunks_with_embeddings):
+                st.success(f"✅ **{url[:60]}...**: Successfully processed ({len(chunks_with_embeddings)} chunks)")
+                url_status[url_key] = {"status": "success", "chunks": len(chunks_with_embeddings)}
+                successful_urls += 1
+            else:
+                st.error(f"❌ **{url[:60]}...**: Failed to store in database")
+                url_status[url_key] = {"status": "failed", "message": "Database storage failed"}
+                failed_urls += 1
+            
+            progress_bar.progress((idx + 1) / len(urls))
+            
+        except Exception as e:
+            st.error(f"❌ **{url[:60]}...**: Error - {str(e)}")
+            with st.expander(f"Error Details for {url[:60]}..."):
+                import traceback
+                st.code(traceback.format_exc())
+            url_status[url_key] = {"status": "failed", "message": str(e)}
+            failed_urls += 1
+    
+    # Final summary
+    status_text.text("✅ Processing complete!")
+    progress_bar.progress(1.0)
+    
+    # Show summary
+    st.markdown("---")
+    if successful_urls > 0:
+        st.success(f"🎉 **{successful_urls} URL(s)** processed successfully!")
+    if failed_urls > 0:
+        st.warning(f"⚠️ **{failed_urls} URL(s)** failed to process")
+    
+    if successful_urls > 0:
+        st.balloons()
+    
+    # Keep progress indicators visible for user to see final status
+
+def process_url(url):
+    """Process single URL by scraping and adding to knowledge base (legacy function for backward compatibility)"""
+    process_urls([url])
 
 def chat_page():
     """Chat interface page"""
-    st.markdown('<h2 class="sub-header">Chat Interface</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="sub-header">💬 Chat Interface</h2>', unsafe_allow_html=True)
     
     # Check if documents exist
     documents = get_all_documents()
     if not documents:
-        st.warning("⚠️ No documents uploaded yet. Please upload documents first.")
+        st.warning("⚠️ **No documents uploaded yet.** Please upload documents first to start chatting.")
+        st.info("💡 Go to the **Upload Documents** page in the sidebar to add your documents.")
         return
     
-    st.info(f"📚 You have {len(documents)} document(s) in the knowledge base. Ask questions about them!")
+    # Show document count and info
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info(f"📚 **{len(documents)} document(s)** in your knowledge base. Ask questions about them!")
+    with col2:
+        if st.button("🗑️ Clear Chat", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
     
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
+    # Welcome message if chat is empty
+    if len(st.session_state.messages) == 0:
+        with st.chat_message("assistant"):
+            st.markdown("👋 **Hello! I'm your RAG assistant.**")
+            st.markdown("I can help you find information from your uploaded documents. Try asking:")
+            st.markdown("- What is this document about?")
+            st.markdown("- What are the complete steps to...?")
+            st.markdown("- Explain how to...")
     
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Chat input
-    if prompt := st.chat_input("Ask a question about your documents..."):
+    # Chat input with better placeholder
+    if prompt := st.chat_input("💬 Ask a question about your documents..."):
         # Validate the query
         prompt_lower = prompt.lower().strip()
         
@@ -232,9 +675,37 @@ def chat_page():
         # Generate response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Query expansion for better retrieval
+                # Query expansion for better retrieval with context awareness
                 expanded_query = prompt
                 query_hints = []
+                
+                # Extract context from previous messages (last 2-3 messages)
+                context_keywords = []
+                if len(st.session_state.messages) > 0:
+                    # Get recent messages for context
+                    recent_messages = st.session_state.messages[-4:]  # Last 4 messages (2 Q&A pairs)
+                    for msg in recent_messages:
+                        if msg["role"] == "user":
+                            # Extract key terms from previous questions
+                            words = msg["content"].lower().split()
+                            # Filter out common words and keep important terms
+                            important_words = [w for w in words if len(w) > 4 and w not in ['what', 'how', 'when', 'where', 'which', 'about', 'will', 'does', 'this', 'that', 'the', 'and', 'for', 'with']]
+                            context_keywords.extend(important_words)
+                        elif msg["role"] == "assistant":
+                            # Extract key terms from previous answers (first 200 chars)
+                            answer_text = msg["content"][:200].lower()
+                            # Extract acronyms and capitalized terms
+                            import re
+                            acronyms = re.findall(r'\b[A-Z]{2,}\b', msg["content"][:200])
+                            context_keywords.extend([a.lower() for a in acronyms])
+                
+                # Add context keywords to query if they're relevant
+                if context_keywords:
+                    # Check if current question mentions terms from context
+                    prompt_lower = prompt.lower()
+                    relevant_context = [kw for kw in context_keywords if kw in prompt_lower or any(kw in word for word in prompt_lower.split())]
+                    if relevant_context:
+                        query_hints.extend(relevant_context[:5])  # Add top 5 relevant context terms
                 
                 # Expand query based on question type
                 if any(word in prompt.lower() for word in ["where", "how to access", "navigate", "go to", "find"]):
@@ -281,6 +752,21 @@ def chat_page():
                 if any(word in prompt.lower() for word in ["how", "steps", "process", "procedure"]):
                     query_hints.append("steps procedure process method")
                 
+                # AIDP/AI Data Platform specific expansion
+                if any(term in prompt.lower() for term in ["aidp", "ai data platform", "oracle ai data platform"]):
+                    query_hints.extend([
+                        "AI Data Platform", "AIDP", "Oracle AI Data Platform", 
+                        "AI Data Platform Workbench", "AIDP Units", "OCPU", "memory",
+                        "compute cluster", "pricing", "cost", "help", "benefits", "features"
+                    ])
+                
+                # APEX specific expansion (to differentiate from AIDP)
+                if any(term in prompt.lower() for term in ["apex", "application express", "oracle apex"]):
+                    query_hints.extend([
+                        "Oracle APEX", "Application Express", "APEX", 
+                        "workspace", "application builder", "page designer"
+                    ])
+                
                 if query_hints:
                     expanded_query = f"{prompt} {' '.join(query_hints)}"
                 
@@ -308,6 +794,57 @@ def chat_page():
                 
                 # Sort by distance
                 similar_chunks = sorted(unique_chunks, key=lambda x: x.get('distance', 1.0))
+                
+                # Topic-based filtering: Ensure chunks are relevant to the question topic
+                prompt_lower = prompt.lower()
+                question_keywords = set()
+                
+                # Extract key terms from the question (excluding common words)
+                import re
+                stop_words = {'what', 'how', 'when', 'where', 'which', 'who', 'why', 'will', 'does', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'about', 'this', 'that', 'these', 'those'}
+                question_words = [w.lower() for w in re.findall(r'\b\w+\b', prompt) if len(w) > 3 and w.lower() not in stop_words]
+                question_keywords.update(question_words)
+                
+                # Extract acronyms (like AIDP, APEX, OCI, etc.)
+                acronyms = re.findall(r'\b[A-Z]{2,}\b', prompt)
+                question_keywords.update([a.lower() for a in acronyms])
+                
+                # Filter chunks to ensure they contain at least one relevant keyword
+                if question_keywords and len(question_keywords) > 0:
+                    filtered_chunks = []
+                    for chunk in similar_chunks:
+                        chunk_text_lower = chunk.get('chunk_text', '').lower()
+                        # Check if chunk contains any question keywords
+                        keyword_matches = sum(1 for kw in question_keywords if kw in chunk_text_lower)
+                        # If it's an acronym, require exact match
+                        acronym_matches = sum(1 for ac in acronyms if ac.lower() in chunk_text_lower or ac in chunk.get('chunk_text', ''))
+                        
+                        # Keep chunk if it has keyword matches or if similarity is very good
+                        if keyword_matches > 0 or acronym_matches > 0 or chunk.get('distance', 1.0) < 0.9:
+                            filtered_chunks.append(chunk)
+                        # Also keep if it's in top 5 and has decent similarity
+                        elif len(filtered_chunks) < 5 and chunk.get('distance', 1.0) < 1.0:
+                            filtered_chunks.append(chunk)
+                    
+                    # If filtering removed too many chunks, use original list but prioritize keyword matches
+                    if len(filtered_chunks) < 3:
+                        # Re-sort with keyword matches as priority
+                        for chunk in similar_chunks[:15]:
+                            if chunk not in filtered_chunks:
+                                chunk_text_lower = chunk.get('chunk_text', '').lower()
+                                keyword_matches = sum(1 for kw in question_keywords if kw in chunk_text_lower)
+                                if keyword_matches > 0:
+                                    filtered_chunks.append(chunk)
+                        
+                        # If still not enough, add best matches
+                        if len(filtered_chunks) < 5:
+                            for chunk in similar_chunks:
+                                if chunk not in filtered_chunks:
+                                    filtered_chunks.append(chunk)
+                                    if len(filtered_chunks) >= 10:
+                                        break
+                    
+                    similar_chunks = filtered_chunks[:30]  # Limit to top 30
                 
                 # Quality check - filter out poor matches with adaptive threshold
                 if similar_chunks:
